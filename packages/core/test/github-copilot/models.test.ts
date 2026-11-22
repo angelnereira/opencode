@@ -165,3 +165,52 @@ test("prices cache reads from either token price spelling", async () => {
     await server.stop(true)
   }
 })
+
+test("creates the Auto entry from a top-level auto flag without billing.auto_discount", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch: () =>
+      Response.json({
+        data: [
+          {
+            // GitHub payload after billing.auto_discount was removed (issue #65464).
+            auto: true,
+            model_picker_enabled: false,
+            id: "free-auto",
+            name: "Free Auto",
+            version: "free-auto-2026-11-01",
+            supported_endpoints: ["/responses", "ws:/responses"],
+            capabilities: {
+              family: "gpt",
+              limits: { max_output_tokens: 20000, max_prompt_tokens: 100000 },
+              supports: { tool_calls: true, vision: true },
+            },
+          },
+          {
+            // Negative control: hidden and with no Auto flag.
+            model_picker_enabled: false,
+            id: "free-plain",
+            name: "Free Plain",
+            version: "free-plain-2026-11-01",
+            capabilities: {
+              family: "gpt",
+              limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
+              supports: { tool_calls: true },
+            },
+          },
+        ],
+      }),
+  })
+
+  try {
+    const snapshot = await run((http) => CopilotModels.load(http, server.url.origin, {}))
+    expect(snapshot.size).toBe(2)
+    const auto = CopilotModels.autoModel(server.url.origin, snapshot)
+    expect(auto).toBeDefined()
+    expect(auto?.id).toBe(CopilotModels.auto)
+    expect(auto?.name).toBe("Auto")
+    expect(auto?.limit).toMatchObject({ input: 100000, output: 20000 })
+  } finally {
+    await server.stop(true)
+  }
+})
